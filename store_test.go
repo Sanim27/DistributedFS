@@ -22,7 +22,7 @@ func TestPathTransformFunc(t *testing.T) {
 
 func TestStoreDeleteKey(t *testing.T) {
 	opts := StoreOpts{
-		CASPathTransformFunc,
+		PathTransformFunc: CASPathTransformFunc,
 	}
 	s := NewStore(opts)
 	key := "momsspecials"
@@ -38,7 +38,7 @@ func TestStoreDeleteKey(t *testing.T) {
 
 func TestStore(t *testing.T) {
 	opts := StoreOpts{
-		CASPathTransformFunc,
+		PathTransformFunc: CASPathTransformFunc,
 	}
 	s := NewStore(opts)
 	key := "momsspecials"
@@ -53,6 +53,10 @@ func TestStore(t *testing.T) {
 		t.Error(err)
 	}
 
+	if ok := s.Has(key); !ok {
+		t.Errorf("Expected to have key %s", key)
+	}
+
 	b, err := io.ReadAll(r)
 
 	fmt.Println(string(b))
@@ -60,6 +64,7 @@ func TestStore(t *testing.T) {
 	if string(b) != string(data) {
 		t.Errorf("want %s have %s", data, b)
 	}
+	fmt.Println(string(b))
 
 	s.Delete(key)
 }
