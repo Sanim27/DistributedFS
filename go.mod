@@ -1,4 +1,4 @@
-module github.com/Sanim27/dfs
+module github.com/Sanim27/DistributedFS
 
 go 1.25.4
 
