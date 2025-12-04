@@ -16,8 +16,8 @@ import (
 const defaultRootFolderName = "ggnetwork"
 
 func CASPathTranformFunc(key string) PathKey {
-	hash := sha1.Sum([]byte(key))
-	hashStr := hex.EncodeToString(hash[:])
+	hash := sha1.Sum([]byte(key)) // converts key of string type to byte slice and computes SHA-1 hash of those bytes
+	hashStr := hex.EncodeToString(hash[:]) // converts array to slice and converts from byte to hexa
 
 	blocksize := 5
 	sliceLen := len(hashStr)/blocksize
@@ -106,7 +106,7 @@ func (s *Store) Delete(key string) error {
 
 }
 
-func (s *Store) Write(key string, r io.Reader) error {
+func (s *Store) Write(key string, r io.Reader) (int64,error) {
 	return s.writestream(key,r)
 }
 
@@ -132,25 +132,23 @@ func (s *Store) readStream(key string) (io.ReadCloser,error) {
 //efficiently copy data from the network connection directly 
 // to the file system without having to load the entire file 
 // into the computer's memory (RAM) first.
-func (s *Store) writestream(key string, r io.Reader) error {
+func (s *Store) writestream(key string, r io.Reader) (int64,error) {
 	pathKey := CASPathTranformFunc(key)
-	pathNameWithRoot := fmt.Sprintf("%s/%s", s.StoreOpts.Root, pathKey.PathName)
+	pathNameWithRoot := fmt.Sprintf("%s/%s", s.StoreOpts.Root, pathKey.PathName) // only directory name
 	if err := os.MkdirAll(pathNameWithRoot, os.ModePerm); err != nil {
-		return err
+		return 0,err
 	}
+	// fmt.Println(pathNameWithRoot)
+	fullPathWithRoot :=fmt.Sprintf("%s/%s", s.StoreOpts.Root, pathKey.FullPath()) // directory + filename
 
-	fullPathWithRoot :=fmt.Sprintf("%s/%s", s.StoreOpts.Root, pathKey.FullPath()) 
-
-	f, err := os.Create(fullPathWithRoot)
+	f, err := os.Create(fullPathWithRoot) // it creates a new file if it doesn't exist and empties (truncates) the file if it already exists.
 	if err != nil {
-		return err
+		return 0,err
 	}
 	n, err := io.Copy(f, r)
 	if err != nil {
-		return err
-	}
-	log.Printf("written (%d) bytes to disk: %s",n, fullPathWithRoot)
-	
-	return nil
+		return 0,err
+	}	
+	return n,nil
 
 }
