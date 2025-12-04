@@ -8,6 +8,7 @@ type Peer interface {
 	//Conn() net.Conn
 	net.Conn
 	Send([]byte) error
+	CloseStream()
 	// RemoteAddr() net.Addr
 	// Close() error
 }
@@ -17,6 +18,7 @@ type Peer interface {
 // form (TCP, UDP , Websockets, ...)
 
 type Transport interface {
+	Addr() string
 	Dial(string) error
 	ListenAndAccept() error
 	Consume() <-chan RPC
