@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package dfspb;
+
+option go_package = "dfs-project/dfspb";
+
+message CreateFileRequest {
+  string filename = 1;
+  int64 total_size = 2;
+}
+
+message CreateFileResponse {
+  bool success = 1;
+}
+
+message AllocateChunkRequest {
+  string filename = 1;
+}
+
+message AllocateChunkResponse {
+  string chunk_id = 1;
+  repeated string locations = 2;
+}
+
+message GetFileMetadataRequest {
+  string filename = 1;
+}
+
+message GetFileMetadataResponse {
+  repeated string chunk_ids = 1; // Changed to repeated for multi-chunk
+  repeated string locations = 2; // Healthy replicas (common for all chunks abhi)
+  int64 file_size = 3; // Add ye for total size
+}
+
+message WriteChunkRequest {
+  string chunk_id = 1;
+  bytes data = 2;
+}
+
+message WriteChunkResponse {
+  bool success = 1;
+}
+
+message ReadChunkRequest {
+  string chunk_id = 1;
+}
+
+message ReadChunkResponse {
+  bytes data = 1;
+}
+
+message ForwardChunkRequest {
+  string chunk_id = 1;
+  bytes data = 2;
+  repeated string next_locations = 3;
+}
+
+service MasterServer {
+  rpc CreateFile(CreateFileRequest) returns (CreateFileResponse);
+  rpc AllocateChunk(AllocateChunkRequest) returns (AllocateChunkResponse);
+  rpc GetFileMetadata(GetFileMetadataRequest) returns (GetFileMetadataResponse);
+}
+
+service ChunkServer {
+  rpc WriteChunk(WriteChunkRequest) returns (WriteChunkResponse);
+  rpc ReadChunk(ReadChunkRequest) returns (ReadChunkResponse);
+  rpc ForwardChunk(ForwardChunkRequest) returns (WriteChunkResponse);
+}
