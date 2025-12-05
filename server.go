@@ -87,7 +87,7 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 	fmt.Printf("[%s] dont have file (%s) locally, fetching from network\n",s.Transport.Addr(),key)
 	msg := Message {
 		Payload: MessageGetFile{
-			Key: key,
+			Key: hashKey(key),
 		},
 	}
 	if err := s.broadcast(&msg); err != nil {
@@ -101,8 +101,8 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 		// from the connection, so it will not keep handing.
 		var fileSize int64
 		binary.Read(peer,binary.LittleEndian,&fileSize)
-		// n,err := s.store.WriteDecrypt(s.EncKey,key,io.LimitReader(peer,fileSize))
-		n,err := s.store.Write(key,peer)
+		n,err := s.store.WriteDecrypt(s.EncKey,key,io.LimitReader(peer,fileSize))
+		// n,err := s.store.Write(key,peer) // ig blocking
 		if err != nil {
 			return nil,err
 		}
@@ -131,8 +131,8 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 
 	msg := Message{
 		Payload: MessageStoreFile{
-			Key: key,
-			Size: size,
+			Key: hashKey(key),
+			Size: size +16,
 		},
 	}
 	if err := s.broadcast(&msg); err != nil {
@@ -141,25 +141,25 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 	//s2 yaa xa 
 	time.Sleep(time.Millisecond * 5)
 	
-	// peers := []io.Writer{}
-	// for _, peer := range s.peers {
-	// 	peers = append(peers, peer)
-	// }
+	peers := []io.Writer{}
+	for _, peer := range s.peers {
+		peers = append(peers, peer)
+	}
 
-	// mw := io.MultiWriter(peers...)
-	// mw.Write([]byte{p2p.IncomingStream})
-	// n, err := copyEncrypt(s.EncKey, fileBuffer, mw)
-	// if err != nil {
-	// 	return err
-	// }
-	for _, peer := range s.peers{
-		peer.Send([]byte{p2p.IncomingStream})
-		n,err := io.Copy(peer, fileBuffer)
-		if err != nil {
-			return nil
-		}
+	mw := io.MultiWriter(peers...)
+	mw.Write([]byte{p2p.IncomingStream})
+	n, err := copyEncrypt(s.EncKey, fileBuffer, mw)
+	if err != nil {
+		return err
+	}
+	// for _, peer := range s.peers{
+	// 	peer.Send([]byte{p2p.IncomingStream})
+	// 	n,err := io.Copy(peer, fileBuffer)
+	// 	if err != nil {
+	// 		return nil
+	// 	}
 		fmt.Printf("[%s] received and written (%d) bytes to disk\n", s.Transport.Addr(), n)
-	} 
+	// } 
 	
 	return nil
 	
@@ -220,7 +220,7 @@ func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error
 	}
 
 	if rc,ok:= r.(io.ReadCloser);ok {
-		fmt.Println("closing readClose")
+		// fmt.Println("closing readClose")
 		defer rc.Close()
 	}
 	peer, ok := s.peers[from]
@@ -236,6 +236,7 @@ func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error
 
 	n, err := io.Copy(peer,r) // sends file's data to peer connection
 	if err != nil {
+		// fmt.Println(err)
 		return err
 	}
 	fmt.Printf("[%s] written %d bytes over the network to %s\n",s.Transport.Addr(),n,from)
