@@ -1,9 +1,16 @@
 package p2p
 
+import "net"
+
 // Peer is an interface that represents the remote
 // node
 type Peer interface {
-	Close() error
+	//Conn() net.Conn
+	net.Conn
+	Send([]byte) error
+	CloseStream()
+	// RemoteAddr() net.Addr
+	// Close() error
 }
 
 // Transport is anything that handles the communication
@@ -11,6 +18,10 @@ type Peer interface {
 // form (TCP, UDP , Websockets, ...)
 
 type Transport interface {
+	Addr() string
+	Dial(string) error
 	ListenAndAccept() error
 	Consume() <-chan RPC
+	Close() error
+	// ListenAddr() string
 }

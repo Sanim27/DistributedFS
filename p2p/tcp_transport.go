@@ -1,18 +1,24 @@
 package p2p
 
 import (
+	"errors"
 	"fmt"
+	"log"
 	"net"
+	"sync"
 )
 
 // TCPPeer represents the remote node over a TCP established connection
 type TCPPeer struct {
-	// conn is the underlying connection of the peer
-	conn net.Conn
+	// The underlying connection of the peer, which in this case
+	// is tcp connection
+	net.Conn
 
 	// if we dial and retrieve a conn -> outbound == true
 	// if we accept and retrieve a conn -> outbound == false
 	outbound bool
+
+	wg *sync.WaitGroup
 }
 
 type TCPtransportOpts struct {
@@ -24,15 +30,31 @@ type TCPtransportOpts struct {
 
 func NewTCPPeer(conn net.Conn, outbound bool) *TCPPeer {
 	return &TCPPeer{
-		conn:     conn,
+		Conn:     conn,
 		outbound: outbound,
+		wg:       &sync.WaitGroup{},
 	}
 }
 
-// close implements the Peer interface
-func (p *TCPPeer) Close() error {
-	return p.conn.Close()
+func (p *TCPPeer) CloseStream() {
+	p.wg.Done()
 }
+
+func (p *TCPPeer) Send(b []byte) error {
+	_, err := p.Conn.Write(b)
+	return err
+}
+
+// RemoteAddr implements the peer interface
+// will return the address of its underlying connection
+// func (p *TCPPeer) RemoteAddr() net.Addr {
+// 	return p.conn.RemoteAddr()
+// }
+
+// // Close implements the Peer interface
+// func (p *TCPPeer) Close() error {
+// 	return p.conn.Close()
+// }
 
 type TCPtransport struct {
 	TCPtransportOpts
@@ -46,8 +68,14 @@ type TCPtransport struct {
 func NewTCPTransport(opts TCPtransportOpts) *TCPtransport {
 	return &TCPtransport{
 		TCPtransportOpts: opts,
-		rpcch:            make(chan RPC),
+		rpcch:            make(chan RPC, 1024),
 	}
+}
+
+// Addr implements the Transport interface return the
+// address the transport is accepting connections.
+func (t *TCPtransport) Addr() string {
+	return t.ListenAddr
 }
 
 // Consume implements the transport interface, which will return a read only channel
@@ -55,6 +83,21 @@ func NewTCPTransport(opts TCPtransportOpts) *TCPtransport {
 // another peer in the network
 func (t *TCPtransport) Consume() <-chan RPC {
 	return t.rpcch
+}
+
+// Close implements the Transport Interface.
+func (t *TCPtransport) Close() error {
+	return t.listener.Close()
+}
+
+// Dial implements the Transport Interface.
+func (t *TCPtransport) Dial(addr string) error {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return err
+	}
+	go t.handleConn(conn, true)
+	return nil
 }
 
 func (t *TCPtransport) ListenAndAccept() error {
@@ -65,33 +108,35 @@ func (t *TCPtransport) ListenAndAccept() error {
 	}
 
 	go t.startAcceptLoop()
+
+	log.Printf("TCP transport listening on port %s\n", t.ListenAddr)
 	return nil
 }
 
 func (t *TCPtransport) startAcceptLoop() {
 	for {
 		conn, err := t.listener.Accept()
+		if errors.Is(err, net.ErrClosed) {
+			return
+		}
 		if err != nil {
 			fmt.Printf("TCP accept error: %s\n", err)
 		}
 
-		fmt.Printf("new incoming connection %+v\n", conn)
-		go t.handleConn(conn)
+		go t.handleConn(conn, false)
 	}
 }
 
-func (t *TCPtransport) handleConn(conn net.Conn) {
+func (t *TCPtransport) handleConn(conn net.Conn, outbound bool) {
 	var err error
 	defer func() {
 		fmt.Printf("Dropping peer connection: %s", err)
 		conn.Close()
 	}()
 
-	peer := NewTCPPeer(conn, false)
+	peer := NewTCPPeer(conn, outbound)
 
 	if err = t.HandshakeFunc(peer); err != nil {
-		// conn.Close()
-		// fmt.Printf("TCP handshake error: %s\n", err)
 		return
 	}
 
@@ -102,22 +147,25 @@ func (t *TCPtransport) handleConn(conn net.Conn) {
 	}
 
 	//Read loop
-	rpc := RPC{}
 	for {
+		rpc := RPC{}
 		err = t.Decoder.Decode(conn, &rpc)
-		// fmt.Println(reflect.TypeOf(err))
-		// panic(err)
-		// if err == &net.OpError {
-		// 	return
-		// }
 		if err != nil {
-			// fmt.Printf("TCP read error: %s\n", err)
-			// continue
 			return
 		}
 
-		rpc.From = conn.RemoteAddr()
+		rpc.From = conn.RemoteAddr().String()
+
+		if rpc.Stream {
+			peer.wg.Add(1)
+			fmt.Printf("[%s] incoming stream, waiting...\n", conn.RemoteAddr())
+			peer.wg.Wait()
+			fmt.Printf("[%s] stream closed, resuming read loop\n", conn.RemoteAddr())
+			continue
+		}
+
 		t.rpcch <- rpc
+
 		//fmt.Printf("message: %+v\n", rpc)
 	}
 }
