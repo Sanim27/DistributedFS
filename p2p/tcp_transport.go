@@ -67,7 +67,7 @@ type TCPTransport struct {
 func NewTCPTransport(opts TCPTranportOpts) *TCPTransport {
 	return &TCPTransport{
 		TCPTransportOpts: opts,
-		rpcch: make(chan RPC),
+		rpcch: make(chan RPC,1024),
 	}
 }
 // Addr implements the transport interface return the address
@@ -131,9 +131,10 @@ func (t *TCPTransport) handleConn(conn net.Conn, outbound bool) {
 
 	defer func() {
 		fmt.Printf("Dropping connection because of this error : %s", err)
+		conn.Close()
 	}()
 	// s1 becomes a peer if s2.handleConn() is called or vice versa.
-	peer := NewTCPPeer(conn, true)
+	peer := NewTCPPeer(conn, outbound)
 
 	if err = t.TCPTransportOpts.HandshakeFunc(peer); err !=nil {
 		return

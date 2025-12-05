@@ -4,11 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-
 	"log"
-
 	"time"
-
 	"github.com/Sanim27/DistributedFS/p2p"
 )
 
@@ -24,7 +21,7 @@ func makeServer(listenAddr string, nodes ...string) *FileServer {
 	fileServerOpts := FileServerOpts{
 		EncKey: newEncryptionKey(),
 		StorageRoot: listenAddr+ "_network",
-		PathTransformFunc: CASPathTranformFunc,
+		PathTransformFunc: CASPathTransformFunc,
 		Transport: tcpTransport,
 		BootstrapNodes: nodes,
 		
@@ -37,28 +34,30 @@ func makeServer(listenAddr string, nodes ...string) *FileServer {
 }
 func main() {
 	s1 := makeServer(":3000", "") // s1 fileserver -> one node 
-	s2 := makeServer(":4000", ":3000") //s2 fileserver -> another node with port 4000
-	go func ()  {
-		log.Fatal(s1.Start())
-	}()
-	time.Sleep(4 * time.Second) // haven't understood
+	s2 := makeServer(":4000", "") //s2 fileserver -> another node with port 4000
+	s3 := makeServer(":5000", ":3000",":4000")
+	go func() { log.Fatal(s1.Start()) }()
+	time.Sleep(500 * time.Millisecond)
+	go func() { log.Fatal(s2.Start()) }()
 
-	go s2.Start()
-	time.Sleep(4 * time.Second) // haven't understood
+	time.Sleep(2 * time.Second)
 
-	// for i := 0; i < 20; i++ {
-		// key := fmt.Sprintf("picture_%d.png",i)
-		key := "picture.png"
+	go s3.Start()
+	time.Sleep(2 * time.Second)
+
+	for i := 0; i < 10; i++ {
+		key := fmt.Sprintf("picture_%d.png",i)
+		// key := "picture.png"
 		data := bytes.NewReader([]byte("my big data file here!"))
-		s2.Store(key, data)
+		s3.Store(key, data)
 		
-		time.Sleep(5 * time.Second)
-		if err := s2.store.Delete(key); err != nil {
+		// time.Sleep(5 * time.Second)
+		if err := s3.store.Delete(s3.ID,key); err != nil {
 			log.Fatal(err)
 		}
-		time.Sleep(2 * time.Second)
+		// time.Sleep(2 * time.Second)
 
-		r, err := s2.Get(key)
+		r, err := s3.Get(key)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -67,5 +66,5 @@ func main() {
 			log.Fatal(err)
 		}
 		fmt.Println(string(b))	
-	// }
+	}
 }

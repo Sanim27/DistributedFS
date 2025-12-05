@@ -15,7 +15,7 @@ import (
 
 const defaultRootFolderName = "ggnetwork"
 
-func CASPathTranformFunc(key string) PathKey {
+func CASPathTransformFunc(key string) PathKey {
 	hash := sha1.Sum([]byte(key)) // converts key of string type to byte slice and computes SHA-1 hash of those bytes
 	hashStr := hex.EncodeToString(hash[:]) // converts array to slice and converts from byte to hexa
 
@@ -58,6 +58,7 @@ type StoreOpts struct {
 	// Root is the folder name of the rood, containing all 
 	// folders/files of the system
 	Root string
+
 	PathTransformFunc  PathTransformFunc
 }
 
@@ -79,14 +80,15 @@ func NewStore(opts StoreOpts) *Store {
 	if len(opts.Root) == 0 {
 		opts.Root = defaultRootFolderName
 	}
+
 	return &Store{
 		StoreOpts: opts,
 	}
 }
 
-func (s *Store) Has(key string) bool {
+func (s *Store) Has(id string,key string) bool {
 	PathKey := s.StoreOpts.PathTransformFunc(key)
-	fullPathWithRoot := fmt.Sprintf("%s/%s", s.StoreOpts.Root, PathKey.FullPath())
+	fullPathWithRoot := fmt.Sprintf("%s/%s/%s", s.StoreOpts.Root,id, PathKey.FullPath())
 	_, err := os.Stat(fullPathWithRoot)
 
 	return !errors.Is(err, os.ErrNotExist)
@@ -95,30 +97,29 @@ func (s *Store) Has(key string) bool {
 func (s *Store) Clear() error {
 	return os.RemoveAll(s.StoreOpts.Root)
 }
-func (s *Store) Delete(key string) error {
+func (s *Store) Delete(id string,key string) error {
 	PathKey:= s.StoreOpts.PathTransformFunc(key)
 
 	defer func() {
 		log.Printf("deleted [%s] from disk", PathKey.Filename)
 	}()
-	firstPathNameWithRoot := fmt.Sprintf("%s/%s", s.StoreOpts.Root, PathKey.FirstPathName())
+	firstPathNameWithRoot := fmt.Sprintf("%s/%s/%s", s.StoreOpts.Root, id,PathKey.FirstPathName())
 	return os.RemoveAll(firstPathNameWithRoot)
 
 }
 
-func (s *Store) Write(key string, r io.Reader) (int64,error) {
-	return s.writeStream(key,r)
+func (s *Store) Write(id string,key string, r io.Reader) (int64,error) {
+	return s.writeStream(id,key,r)
 }
 
-// FIXME: Instead of copying directly to a reader, we first copy 
-// this into a buffer. Maybe just return the file from the readstream.
-func (s *Store) Read(key string) (int64,io.Reader, error) {
-	return s.readStream(key)
+
+func (s *Store) Read(id string,key string) (int64,io.Reader, error) {
+	return s.readStream(id,key)
 }
 
-func (s *Store) readStream(key string) (int64,io.ReadCloser,error) {
+func (s *Store) readStream(id string, key string) (int64,io.ReadCloser,error) {
 	pathKey := s.StoreOpts.PathTransformFunc(key)
-	fullPathWithRoot := fmt.Sprintf("%s/%s", s.StoreOpts.Root, pathKey.FullPath())
+	fullPathWithRoot := fmt.Sprintf("%s/%s/%s", s.StoreOpts.Root,id, pathKey.FullPath())
 
 	file,err:= os.Open(fullPathWithRoot)
 	if err != nil {
@@ -130,8 +131,8 @@ func (s *Store) readStream(key string) (int64,io.ReadCloser,error) {
 	}
 	return fi.Size(),file,nil
 }
-func (s *Store) WriteDecrypt(encKey []byte, key string, r io.Reader) (int64, error) {
-    f, err := s.openFileForWriting(key)
+func (s *Store) WriteDecrypt(encKey []byte, id string,key string, r io.Reader) (int64, error) {
+    f, err := s.openFileForWriting(id,key)
     if err != nil {
         return 0, err
     }
@@ -140,21 +141,21 @@ func (s *Store) WriteDecrypt(encKey []byte, key string, r io.Reader) (int64, err
     return int64(n), err
 }
 
-func (s *Store) openFileForWriting(key string) (*os.File, error) {
+func (s *Store) openFileForWriting(id string,key string) (*os.File, error) {
     pathKey := s.StoreOpts.PathTransformFunc(key)
-    pathNameWithRoot := fmt.Sprintf("%s/%s", s.StoreOpts.Root, pathKey.PathName)
+    pathNameWithRoot := fmt.Sprintf("%s/%s/%s", s.StoreOpts.Root,id,pathKey.PathName)
     
     if err := os.MkdirAll(pathNameWithRoot, os.ModePerm); err != nil {
         return nil, err
     }
 
-    fullPathWithRoot := fmt.Sprintf("%s/%s", s.StoreOpts.Root, pathKey.FullPath())
+    fullPathWithRoot := fmt.Sprintf("%s/%s/%s", s.StoreOpts.Root,id,pathKey.FullPath())
 
     return os.Create(fullPathWithRoot)
 }
 
-func (s *Store) writeStream(key string, r io.Reader) (int64, error) {
-    f, err := s.openFileForWriting(key)
+func (s *Store) writeStream(id string,key string, r io.Reader) (int64, error) {
+    f, err := s.openFileForWriting(id,key)
     if err != nil {
         return 0, err
     }
