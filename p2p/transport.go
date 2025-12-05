@@ -8,6 +8,7 @@ type Peer interface {
 	net.Conn
 	Close() error
 	Send([]byte) error
+	CloseStream() 
 }
 
 // Transport is anything that handles communication between

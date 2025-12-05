@@ -2,8 +2,13 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"io"
+
 	"log"
+
 	"time"
+
 	"github.com/Sanim27/DistributedFS/p2p"
 )
 
@@ -17,6 +22,7 @@ func makeServer(listenAddr string, nodes ...string) *FileServer {
 
 
 	fileServerOpts := FileServerOpts{
+		EncKey: newEncryptionKey(),
 		StorageRoot: listenAddr+ "_network",
 		PathTransformFunc: CASPathTranformFunc,
 		Transport: tcpTransport,
@@ -40,10 +46,26 @@ func main() {
 	go s2.Start()
 	time.Sleep(4 * time.Second) // haven't understood
 
-	for i := 0; i < 1; i++ {
+	// for i := 0; i < 20; i++ {
+		// key := fmt.Sprintf("picture_%d.png",i)
+		key := "picture.png"
 		data := bytes.NewReader([]byte("my big data file here!"))
-		s2.Store("myprivatedata", data)
-		time.Sleep(5 * time.Millisecond)
-	}
-	select {}
+		s2.Store(key, data)
+		
+		time.Sleep(5 * time.Second)
+		if err := s2.store.Delete(key); err != nil {
+			log.Fatal(err)
+		}
+		time.Sleep(2 * time.Second)
+
+		r, err := s2.Get(key)
+		if err != nil {
+			log.Fatal(err)
+		}
+		b, err := io.ReadAll(r)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(string(b))	
+	// }
 }
