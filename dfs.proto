@@ -27,9 +27,9 @@ message GetFileMetadataRequest {
 }
 
 message GetFileMetadataResponse {
-  repeated string chunk_ids = 1; // Changed to repeated for multi-chunk
-  repeated string locations = 2; // Healthy replicas (common for all chunks abhi)
-  int64 file_size = 3; // Add ye for total size
+  repeated string chunk_ids = 1;
+  repeated string locations = 2;
+  int64 file_size = 3;
 }
 
 message WriteChunkRequest {
@@ -55,10 +55,19 @@ message ForwardChunkRequest {
   repeated string next_locations = 3;
 }
 
+message HeartbeatRequest {
+  string address = 1;
+}
+
+message HeartbeatResponse {
+  bool success = 1;
+}
+
 service MasterServer {
   rpc CreateFile(CreateFileRequest) returns (CreateFileResponse);
   rpc AllocateChunk(AllocateChunkRequest) returns (AllocateChunkResponse);
   rpc GetFileMetadata(GetFileMetadataRequest) returns (GetFileMetadataResponse);
+  rpc SendHeartbeat(HeartbeatRequest) returns (HeartbeatResponse);
 }
 
 service ChunkServer {

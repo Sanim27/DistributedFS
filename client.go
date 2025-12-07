@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"dfs-project/dfspb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-const CHUNK_SIZE = 1 * 1024 * 1024 // 1MB chunks
+const CHUNK_SIZE = 1 * 1024 * 1024
 
 func main() {
 	if len(os.Args) != 3 {
@@ -25,8 +26,6 @@ func main() {
 		upload(file)
 	} else if cmd == "download" {
 		download(file)
-	} else {
-		log.Fatal("Use: upload or download")
 	}
 }
 
@@ -44,7 +43,7 @@ func upload(localPath string) {
 		log.Fatal(err)
 	}
 	defer conn.Close()
-	master := dfspb.NewMasterServerClient(conn) // FIXED: NewMasterServerClient
+	master := dfspb.NewMasterServerClient(conn)
 
 	_, err = master.CreateFile(context.Background(), &dfspb.CreateFileRequest{
 		Filename:  localPath,
@@ -71,13 +70,31 @@ func upload(localPath string) {
 			log.Fatal("AllocateChunk failed:", err)
 		}
 
-		primary := allocResp.Locations[0]
-		replicas := allocResp.Locations[1:]
-
-		chunkConn, err := grpc.Dial(primary, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			log.Fatal(err)
+		// Find first alive primary
+		var primary string
+		for _, loc := range allocResp.Locations {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			conn, err := grpc.DialContext(ctx, loc, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			if err == nil {
+				primary = loc
+				conn.Close()
+				break
+			}
 		}
+		if primary == "" {
+			log.Fatal("No alive chunkservers!")
+		}
+
+		// Remaining as replicas
+		var replicas []string
+		for _, loc := range allocResp.Locations {
+			if loc != primary {
+				replicas = append(replicas, loc)
+			}
+		}
+
+		chunkConn, _ := grpc.Dial(primary, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		client := dfspb.NewChunkServerClient(chunkConn)
 
 		_, err = client.ForwardChunk(context.Background(), &dfspb.ForwardChunkRequest{
@@ -89,10 +106,11 @@ func upload(localPath string) {
 			log.Fatal("ForwardChunk failed:", err)
 		}
 
-		fmt.Printf("Uploaded chunk %d/%d → %s (replicated, %d KB)\n", (i/CHUNK_SIZE)+1, totalChunks, allocResp.ChunkId, len(chunk)/1024)
+		fmt.Printf("Uploaded chunk %d/%d → %s (primary: %s, replicated to %d others, %d KB)\n",
+			(i/CHUNK_SIZE)+1, totalChunks, allocResp.ChunkId, primary, len(replicas), len(chunk)/1024)
 		chunkConn.Close()
 	}
-	log.Println("FULL FILE UPLOADED WITH MULTI-CHUNKS")
+	
 }
 
 func download(filename string) {
@@ -101,7 +119,7 @@ func download(filename string) {
 		log.Fatal(err)
 	}
 	defer conn.Close()
-	master := dfspb.NewMasterServerClient(conn) // FIXED: NewMasterServerClient
+	master := dfspb.NewMasterServerClient(conn)
 
 	meta, err := master.GetFileMetadata(context.Background(), &dfspb.GetFileMetadataRequest{Filename: filename})
 	if err != nil || len(meta.ChunkIds) == 0 {
@@ -128,7 +146,7 @@ func download(filename string) {
 				continue
 			}
 			data = resp.Data
-			log.Printf("Read success from %s", location)
+			log.Printf("Successfully read from %s", location)
 			break
 		}
 		if len(data) == 0 {

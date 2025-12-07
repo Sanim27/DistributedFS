@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net"
 	"os"
 	"path/filepath"
+	"time"
 
 	"dfs-project/dfspb"
 	"google.golang.org/grpc"
@@ -39,15 +41,13 @@ func (c *ChunkServer) ReadChunk(ctx context.Context, req *dfspb.ReadChunkRequest
 }
 
 func (c *ChunkServer) ForwardChunk(ctx context.Context, req *dfspb.ForwardChunkRequest) (*dfspb.WriteChunkResponse, error) {
-	// Local save kar
 	path := filepath.Join(c.storagePath, req.ChunkId)
 	err := os.WriteFile(path, req.Data, 0644)
 	if err != nil {
 		return &dfspb.WriteChunkResponse{Success: false}, err
 	}
-	log.Printf("Replicated locally %s (%d bytes)", req.ChunkId, len(req.Data))
+	log.Printf("Replicated %s (%d bytes)", req.ChunkId, len(req.Data))
 
-	// Next replica pe pipeline forward kar
 	if len(req.NextLocations) > 0 {
 		nextAddr := req.NextLocations[0]
 		remaining := req.NextLocations[1:]
@@ -67,20 +67,19 @@ func (c *ChunkServer) ForwardChunk(ctx context.Context, req *dfspb.ForwardChunkR
 		if err != nil {
 			return &dfspb.WriteChunkResponse{Success: false}, err
 		}
-		log.Printf("Forwarded %s to %s", req.ChunkId, nextAddr)
 	}
 
 	return &dfspb.WriteChunkResponse{Success: true}, nil
 }
 
 func main() {
-	port := flag.String("port", "9001", "listen port")
-	storage := flag.String("storage", "chunks", "storage dir")
+	port := flag.String("port", "9001", "server port")
+	storage := flag.String("storage", "chunks", "storage directory")
 	flag.Parse()
 
 	os.MkdirAll(*storage, 0755)
 
-	lis, err := net.Listen("tcp", "0.0.0.0:"+*port) // Bind to 0.0.0.0 for real networking
+	lis, err := net.Listen("tcp", "0.0.0.0:"+*port)
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
 	}
@@ -88,7 +87,33 @@ func main() {
 	s := grpc.NewServer()
 	dfspb.RegisterChunkServerServer(s, &ChunkServer{storagePath: *storage})
 
-	log.Printf("ChunkServer started on 0.0.0.0:%s (storage: %s)", *port, *storage)
+	// Heartbeat goroutine
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+
+		conn, err := grpc.Dial("127.0.0.1:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			log.Fatalf("Failed to connect to master for heartbeat: %v", err)
+		}
+		defer conn.Close()
+		masterClient := dfspb.NewMasterServerClient(conn)
+
+		myAddr := fmt.Sprintf("127.0.0.1:%s", *port)  // Change to real IP if needed
+
+		for range ticker.C {
+			_, err := masterClient.SendHeartbeat(context.Background(), &dfspb.HeartbeatRequest{
+				Address: myAddr,
+			})
+			if err != nil {
+				log.Printf("Heartbeat failed: %v", err)
+			} else {
+				log.Printf("Heartbeat sent to master from %s", myAddr)
+			}
+		}
+	}()
+
+	log.Printf("ChunkServer running on 0.0.0.0:%s (storage: %s)", *port, *storage)
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 	}

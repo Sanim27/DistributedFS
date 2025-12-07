@@ -22,6 +22,7 @@ const (
 	MasterServer_CreateFile_FullMethodName      = "/dfspb.MasterServer/CreateFile"
 	MasterServer_AllocateChunk_FullMethodName   = "/dfspb.MasterServer/AllocateChunk"
 	MasterServer_GetFileMetadata_FullMethodName = "/dfspb.MasterServer/GetFileMetadata"
+	MasterServer_SendHeartbeat_FullMethodName   = "/dfspb.MasterServer/SendHeartbeat"
 )
 
 // MasterServerClient is the client API for MasterServer service.
@@ -31,6 +32,7 @@ type MasterServerClient interface {
 	CreateFile(ctx context.Context, in *CreateFileRequest, opts ...grpc.CallOption) (*CreateFileResponse, error)
 	AllocateChunk(ctx context.Context, in *AllocateChunkRequest, opts ...grpc.CallOption) (*AllocateChunkResponse, error)
 	GetFileMetadata(ctx context.Context, in *GetFileMetadataRequest, opts ...grpc.CallOption) (*GetFileMetadataResponse, error)
+	SendHeartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
 }
 
 type masterServerClient struct {
@@ -71,6 +73,16 @@ func (c *masterServerClient) GetFileMetadata(ctx context.Context, in *GetFileMet
 	return out, nil
 }
 
+func (c *masterServerClient) SendHeartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HeartbeatResponse)
+	err := c.cc.Invoke(ctx, MasterServer_SendHeartbeat_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MasterServerServer is the server API for MasterServer service.
 // All implementations must embed UnimplementedMasterServerServer
 // for forward compatibility.
@@ -78,6 +90,7 @@ type MasterServerServer interface {
 	CreateFile(context.Context, *CreateFileRequest) (*CreateFileResponse, error)
 	AllocateChunk(context.Context, *AllocateChunkRequest) (*AllocateChunkResponse, error)
 	GetFileMetadata(context.Context, *GetFileMetadataRequest) (*GetFileMetadataResponse, error)
+	SendHeartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
 	mustEmbedUnimplementedMasterServerServer()
 }
 
@@ -96,6 +109,9 @@ func (UnimplementedMasterServerServer) AllocateChunk(context.Context, *AllocateC
 }
 func (UnimplementedMasterServerServer) GetFileMetadata(context.Context, *GetFileMetadataRequest) (*GetFileMetadataResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetFileMetadata not implemented")
+}
+func (UnimplementedMasterServerServer) SendHeartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SendHeartbeat not implemented")
 }
 func (UnimplementedMasterServerServer) mustEmbedUnimplementedMasterServerServer() {}
 func (UnimplementedMasterServerServer) testEmbeddedByValue()                      {}
@@ -172,6 +188,24 @@ func _MasterServer_GetFileMetadata_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MasterServer_SendHeartbeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HeartbeatRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MasterServerServer).SendHeartbeat(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MasterServer_SendHeartbeat_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MasterServerServer).SendHeartbeat(ctx, req.(*HeartbeatRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MasterServer_ServiceDesc is the grpc.ServiceDesc for MasterServer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -190,6 +224,10 @@ var MasterServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetFileMetadata",
 			Handler:    _MasterServer_GetFileMetadata_Handler,
+		},
+		{
+			MethodName: "SendHeartbeat",
+			Handler:    _MasterServer_SendHeartbeat_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
