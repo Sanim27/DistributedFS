@@ -1,0 +1,162 @@
+package store
+
+import (
+	"crypto/sha1"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"strings"
+
+	"github.com/Sanim27/dfs/p2p"
+)
+
+// filename => clown.jpg
+// path => transformfunc(filename) => Root/path
+
+const defaultRootFolderName = "ggnetwork"
+
+func CASPathTransformFunc(key string) PathKey {
+	hash := sha1.Sum([]byte(key))
+	hashStr := hex.EncodeToString(hash[:])
+	blockSize := 5
+	sliceLen := len(hashStr) / blockSize
+
+	paths := make([]string, sliceLen)
+	for i := 0; i < sliceLen; i++ {
+		from, to := i*blockSize, i*blockSize+blockSize
+		paths[i] = hashStr[from:to]
+	}
+	return PathKey{
+		Pathname: strings.Join(paths, "/"),
+		Filename: hashStr,
+	}
+}
+
+type PathTransformFunc func(string) PathKey
+
+type PathKey struct {
+	Pathname string
+	Filename string
+}
+
+func (p PathKey) FullPath() string {
+	return fmt.Sprintf("%s/%s", p.Pathname, p.Filename)
+}
+
+type StoreOpts struct {
+	// Root is the folder name of the root
+	// containing all the folders/fil
+	Root              string
+	PathTransformFunc PathTransformFunc
+}
+
+var DefaultPathTransferFunc = func(key string) PathKey {
+	return PathKey{
+		Pathname: key,
+		Filename: key,
+	}
+}
+
+type Store struct {
+	StoreOpts
+}
+
+func (s *Store) Has(id string, key string) bool {
+	pathKey := s.PathTransformFunc(key)
+	FullPathWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.FullPath())
+	_, err := os.Stat(FullPathWithRoot)
+	return !errors.Is(err, os.ErrNotExist)
+}
+
+func (p PathKey) firstPathName() string {
+	paths := strings.Split(p.FullPath(), "/")
+	if len(paths) == 0 {
+		return ""
+	}
+	return paths[0]
+}
+
+func (s *Store) Clear() error {
+	return os.RemoveAll(s.Root)
+}
+
+func (s *Store) Delete(id string, key string) error {
+	pathKey := s.PathTransformFunc(key)
+
+	defer func() {
+		log.Printf("deleted [%s] from disk", pathKey.Filename)
+	}()
+
+	firstPathNameWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.firstPathName())
+	return os.RemoveAll(firstPathNameWithRoot)
+}
+
+func NewStore(opts StoreOpts) *Store {
+
+	if opts.PathTransformFunc == nil {
+		opts.PathTransformFunc = DefaultPathTransferFunc
+	}
+
+	if len(opts.Root) == 0 {
+		opts.Root = defaultRootFolderName
+	}
+
+	return &Store{
+		StoreOpts: opts,
+	}
+}
+
+func (s *Store) Write(id string, key string, r io.Reader) (int64, error) {
+	return s.writeStream(id, key, r)
+}
+
+func (s *Store) WriteDecrypt(encKey []byte, id string, key string, r io.Reader) (int64, error) {
+	f, err := s.openFileForWriting(id, key)
+	if err != nil {
+		return 0, err
+	}
+	n, err := p2p.CopyDecrypt(encKey, r, f)
+	return int64(n), err
+}
+
+func (s *Store) openFileForWriting(id string, key string) (*os.File, error) {
+	PathKey := s.PathTransformFunc(key)
+	pathNameWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, PathKey.Pathname)
+	if err := os.MkdirAll(pathNameWithRoot, os.ModePerm); err != nil {
+		return nil, err
+	}
+	fullpathWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, PathKey.FullPath())
+
+	return os.Create(fullpathWithRoot)
+}
+
+func (s *Store) writeStream(id string, key string, r io.Reader) (int64, error) {
+	f, err := s.openFileForWriting(id, key)
+	if err != nil {
+		return 0, err
+	}
+	return io.Copy(f, r)
+}
+
+func (s *Store) Read(id string, key string) (int64, io.Reader, error) {
+	return s.readStream(id, key)
+}
+
+func (s *Store) readStream(id string, key string) (int64, io.ReadCloser, error) {
+	pathKey := s.PathTransformFunc(key)
+	FullPathWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.FullPath())
+
+	file, err := os.Open(FullPathWithRoot)
+	if err != nil {
+		return 0, nil, err
+	}
+	fi, err := file.Stat()
+	if err != nil {
+		return 0, nil, err
+	}
+
+	return fi.Size(), file, nil
+}

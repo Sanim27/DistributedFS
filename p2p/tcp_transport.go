@@ -165,7 +165,5 @@ func (t *TCPtransport) handleConn(conn net.Conn, outbound bool) {
 		}
 
 		t.rpcch <- rpc
-
-		//fmt.Printf("message: %+v\n", rpc)
 	}
 }
