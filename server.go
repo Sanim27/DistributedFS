@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Sanim27/dfs/p2p"
+	"github.com/Sanim27/DistributedFS/p2p"
 )
 
 type FileServerOpts struct {
