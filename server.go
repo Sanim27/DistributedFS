@@ -83,7 +83,7 @@ type MessageGetFile struct {
 }
 
 func (s *FileServer) Get(key string) (io.Reader, error) {
-	if s.store.Has(s.FileServerOpts.ID, key) {
+	if s.store.Has(s.ID, key) {
 		fmt.Printf("[%s] serving file (%s) from local disk", s.Transport.Addr(), key)
 		_, r, err := s.store.Read(s.ID, hashKey(key))
 		return r, err
